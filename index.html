@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#087a45">
+<meta name="description" content="Aplicativo simples para registrar coordenadas GPS de postes e equipamentos em campo.">
+<link rel="manifest" href="manifest.json">
+<title>Coordenadas Fácil – Campo</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#17231d;background:#f2f6f3}
+*{box-sizing:border-box}body{margin:0}.wrap{max-width:680px;margin:auto;padding:16px}
+header{background:#087a45;color:white;padding:20px 18px;border-radius:18px;margin:8px 0 14px}
+header h1{margin:0;font-size:1.35rem}header p{margin:5px 0 0;opacity:.9;font-size:.9rem}
+.card{background:white;border:1px solid #dce8df;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 2px 8px #173c2510}
+h2{font-size:1.05rem;margin:0 0 14px}.btn{border:0;border-radius:11px;padding:13px 14px;font-size:1rem;font-weight:700;cursor:pointer;background:#e8f2eb;color:#145b35}
+.primary{background:#087a45;color:white;width:100%}.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}
+label{display:block;font-size:.85rem;font-weight:650;margin:10px 0 5px}
+input,select{width:100%;padding:12px;border:1px solid #cbd9ce;border-radius:10px;font:inherit;background:white}
+.metric{margin:13px 0}.metric small{color:#617268;display:block}.metric strong{font-size:1.15rem;overflow-wrap:anywhere}
+#status{font-size:.9rem;color:#52645a;margin-top:10px;min-height:1.3em}
+.item{background:#f4f8f5;padding:12px;border-radius:12px;margin:9px 0;overflow-wrap:anywhere}
+.item strong{display:block}.item small{color:#607067}.item-actions{display:flex;gap:8px;margin-top:9px}
+.item-actions button{font-size:.85rem;padding:8px 10px}
+.muted{color:#617268;font-size:.82rem;line-height:1.45}
+footer{text-align:center;color:#68786e;font-size:.78rem;padding:15px}
+</style>
+</head>
+<body>
+<main class="wrap">
+<header><h1>📍 Coordenadas Fácil</h1><p>Registro de localização em campo • Bahia</p></header>
+
+<section class="card">
+<h2>Minha localização</h2>
+<button class="btn primary" id="capture">📍 CAPTURAR COORDENADAS</button>
+<div id="status" role="status" aria-live="polite">Toque no botão e permita o acesso à localização.</div>
+<div class="metric"><small>LATITUDE</small><strong id="lat">—</strong></div>
+<div class="metric"><small>LONGITUDE</small><strong id="lon">—</strong></div>
+<div class="metric"><small>PRECISÃO INFORMADA PELO GPS</small><strong id="accuracy">—</strong></div>
+<div class="grid">
+<button class="btn" id="copy">📋 Copiar</button>
+<button class="btn" id="maps">🗺️ Google Maps</button>
+</div>
+</section>
+
+<section class="card">
+<h2>Identificar equipamento</h2>
+<label for="type">Tipo</label>
+<select id="type">
+<option>Poste</option><option>Transformador</option><option>Equipamento</option>
+<option>Chave fusível</option><option>Outro</option>
+</select>
+<label for="name">Identificação / número do equipamento</label>
+<input id="name" placeholder="Ex.: G44924, poste 15...">
+<label for="notes">Observação (opcional)</label>
+<input id="notes" placeholder="Ex.: Alimentador, trecho...">
+<button class="btn primary" id="save" style="margin-top:14px">💾 SALVAR PONTO</button>
+</section>
+
+<section class="card">
+<h2>Histórico de pontos <span id="count" class="muted">(0)</span></h2>
+<div id="history" class="muted">Nenhum ponto salvo ainda.</div>
+<div class="grid">
+<button class="btn" id="export">📄 Exportar CSV</button>
+<button class="btn" id="share">📤 Compartilhar último</button>
+</div>
+<button class="btn" id="clear" style="margin-top:10px;width:100%">Limpar histórico</button>
+</section>
+<footer>Use em local seguro. A precisão depende do aparelho, do sinal GPS e do ambiente. Não substitui sistemas oficiais de cadastro.</footer>
+</main>
+<script>
+(()=> {
+'use strict';
+const $=id=>document.getElementById(id);
+let current=null, records=[];
+try{records=JSON.parse(localStorage.getItem('coord-facil-records')||'[]');if(!Array.isArray(records))records=[]}catch(e){records=[]}
+const say=t=>$('status').textContent=t;
+const fmt=n=>Number(n).toFixed(7);
+function persist(){try{localStorage.setItem('coord-facil-records',JSON.stringify(records))}catch(e){say('Armazenamento indisponível neste navegador. Exporte seus dados.');}}
+function render(){
+ $('count').textContent='('+records.length+')';$('history').replaceChildren();
+ if(!records.length){$('history').textContent='Nenhum ponto salvo ainda.';return}
+ [...records].reverse().forEach(r=>{
+  const box=document.createElement('div');box.className='item';
+  const title=document.createElement('strong');title.textContent=r.type+' — '+r.name;
+  const coords=document.createElement('div');coords.textContent=r.lat+', '+r.lon;
+  const details=document.createElement('small');details.textContent=(r.date||'')+' • Precisão ±'+r.accuracy+' m'+(r.notes?' • '+r.notes:'');
+  const actions=document.createElement('div');actions.className='item-actions';
+  const map=document.createElement('button');map.className='btn';map.textContent='Abrir mapa';map.onclick=()=>window.open('https://www.google.com/maps?q='+r.lat+','+r.lon,'_blank','noopener');
+  const cp=document.createElement('button');cp.className='btn';cp.textContent='Copiar';cp.onclick=()=>copyText(r.lat+', '+r.lon);
+  const del=document.createElement('button');del.className='btn';del.textContent='Excluir';del.onclick=()=>{records=records.filter(x=>x.id!==r.id);persist();render();};
+  actions.append(map,cp,del);box.append(title,coords,details,actions);$('history').append(box);
+ });
+}
+async function copyText(t){
+ try{await navigator.clipboard.writeText(t);say('Coordenadas copiadas!')}
+ catch(e){say('Não foi possível copiar automaticamente. Selecione as coordenadas na tela.')}
+}
+$('capture').addEventListener('click',()=>{
+ if(!window.isSecureContext){say('Para usar o GPS, abra o app por um endereço HTTPS (ex.: GitHub Pages).');return}
+ if(!navigator.geolocation){say('Este navegador não disponibiliza geolocalização.');return}
+ say('Buscando posição GPS... mantenha o aparelho com boa visão do céu.');
+ navigator.geolocation.getCurrentPosition(p=>{
+  current={lat:fmt(p.coords.latitude),lon:fmt(p.coords.longitude),accuracy:Math.round(p.coords.accuracy)};
+  $('lat').textContent=current.lat;$('lon').textContent=current.lon;$('accuracy').textContent='± '+current.accuracy+' metros';
+  say('Localização capturada. Confira a precisão antes de usar.');
+ },e=>{
+  say(e.code===1?'Permissão negada. Autorize a localização nas configurações do navegador.':e.code===2?'Sinal de localização indisponível. Verifique o GPS.':'Tempo esgotado. Tente novamente em local aberto.');
+ },{enableHighAccuracy:true,timeout:30000,maximumAge:0});
+});
+$('copy').onclick=()=>current?copyText(current.lat+', '+current.lon):say('Capture a localização primeiro.');
+$('maps').onclick=()=>current?window.open('https://www.google.com/maps?q='+current.lat+','+current.lon,'_blank','noopener'):say('Capture a localização primeiro.');
+$('save').onclick=()=>{
+ if(!current){say('Capture a localização antes de salvar.');return}
+ records.push({...current,type:$('type').value,name:$('name').value.trim()||'Sem identificação',notes:$('notes').value.trim(),date:new Date().toLocaleString('pt-BR'),id:Date.now()});
+ persist();render();$('name').value='';$('notes').value='';say('Ponto salvo neste aparelho/navegador.');
+};
+$('export').onclick=()=>{
+ if(!records.length){say('Não há pontos para exportar.');return}
+ const esc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+ const rows=[['Tipo','Identificação','Latitude','Longitude','Precisão (m)','Observação','Data'],...records.map(r=>[r.type,r.name,r.lat,r.lon,r.accuracy,r.notes,r.date])];
+ const blob=new Blob(['\uFEFF'+rows.map(row=>row.map(esc).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='coordenadas_campo.csv';a.click();URL.revokeObjectURL(url);say('Arquivo CSV exportado.');
+};
+$('share').onclick=async()=>{
+ if(!records.length){say('Salve um ponto primeiro.');return}
+ const r=records[records.length-1],txt='Coordenadas Fácil\n'+r.type+' — '+r.name+'\nLatitude: '+r.lat+'\nLongitude: '+r.lon+'\nPrecisão: ±'+r.accuracy+' m\n'+(r.notes||'')+'\nhttps://www.google.com/maps?q='+r.lat+','+r.lon;
+ if(navigator.share){try{await navigator.share({title:'Coordenadas de campo',text:txt})}catch(e){}}
+ else copyText(txt);
+};
+$('clear').onclick=()=>{if(confirm('Deseja apagar todo o histórico deste aparelho?')){records=[];persist();render();say('Histórico apagado.')}};
+render();
+if('serviceWorker' in navigator && location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+})();
+</script>
+</body>
+</html>
